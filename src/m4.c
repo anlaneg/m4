@@ -399,6 +399,7 @@ process_file (const char *name)
 #define OPTSTRING "-B:D:EF:GH:I:L:N:PQR:S:T:U:d::egil:o:st:"
 #endif
 
+/*m4程序入口*/
 int
 main (int argc, char *const *argv)
 {
@@ -416,6 +417,7 @@ main (int argc, char *const *argv)
   const char *frozen_file_to_write = NULL;
   const char *macro_sequence = "";
 
+  /*记录程序名称*/
   set_program_name (argv[0]);
   retcode = EXIT_SUCCESS;
   setlocale (LC_ALL, "");
@@ -435,6 +437,8 @@ main (int argc, char *const *argv)
   program_error_message
     = xasprintf (_("internal error detected; please report this bug to <%s>"),
                  PACKAGE_BUGREPORT);
+
+  /*记录各信号对应的字符串形式*/
   signal_message[SIGSEGV] = xstrdup (strsignal (SIGSEGV));
   signal_message[SIGABRT] = xstrdup (strsignal (SIGABRT));
   signal_message[SIGILL] = xstrdup (strsignal (SIGILL));
@@ -473,6 +477,7 @@ main (int argc, char *const *argv)
   /* First, we decode the arguments, to size up tables and stuff.  */
   head = tail = NULL;
 
+  /*进行m4参数解析*/
   while ((optchar = getopt_long (argc, (char **) argv, OPTSTRING,
                                  long_options, NULL)) != -1)
     switch (optchar)
@@ -506,11 +511,12 @@ main (int argc, char *const *argv)
         /* Arguments that cannot be handled until later are accumulated.  */
 
         defn = (macro_definition *) xmalloc (sizeof (macro_definition));
-        defn->code = optchar;
-        defn->arg = optarg;
+        defn->code = optchar;/*由哪个参数指定的内容*/
+        defn->arg = optarg;/*参数取值*/
         defn->next = NULL;
 
         if (head == NULL)
+            /*将以上参数指定的内容串到head,tail中*/
           head = defn;
         else
           tail->next = defn;
@@ -530,6 +536,7 @@ main (int argc, char *const *argv)
         break;
 
       case 'G':
+          /*禁止gnu扩展*/
         no_gnu_extensions = 1;
         break;
 
@@ -540,6 +547,7 @@ main (int argc, char *const *argv)
         break;
 
       case 'I':
+          /*添加include目录*/
         add_include_directory (optarg);
         break;
 
@@ -548,10 +556,12 @@ main (int argc, char *const *argv)
         break;
 
       case 'P':
+          /*所有内建添加m4前缀*/
         prefix_all_builtins = 1;
         break;
 
       case 'Q':
+          /*指明需要压制告警，默认不压制*/
         suppress_warnings = 1;
         break;
 
@@ -618,6 +628,7 @@ main (int argc, char *const *argv)
         break;
       }
 
+  /*将由-D等参数给定的一串内容，赋给defines*/
   defines = head;
 
   /* Do the basic initializations.  */
@@ -647,6 +658,7 @@ main (int argc, char *const *argv)
   /* Handle deferred command line macro definitions.  Must come after
      initialization of the symbol table.  */
 
+  /*遍历defines的一串内容*/
   while (defines != NULL)
     {
       macro_definition *next;
@@ -661,12 +673,14 @@ main (int argc, char *const *argv)
             char *macro_value = strchr (macro_name, '=');
             if (macro_value)
               *macro_value++ = '\0';
+            /*-D指定的宏名称及其取值，将其添加进符号表*/
             define_user_macro (macro_name, macro_value, SYMBOL_INSERT);
             free (macro_name);
           }
           break;
 
         case 'U':
+            /*自符号表删除指定的宏名称*/
           lookup_symbol (defines->arg, SYMBOL_DELETE);
           break;
 
@@ -704,9 +718,11 @@ main (int argc, char *const *argv)
      and the input read.  Wrapup text is handled separately later.  */
 
   if (optind == argc && !seen_file)
+      /*没有看到指定文件，处理stdin文件*/
     process_file ("-");
   else
     for (; optind < argc; optind++)
+        /*看到多个文件，逐个处理指定的文件*/
       process_file (argv[optind]);
 
   /* Now handle wrapup text.  */

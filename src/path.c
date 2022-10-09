@@ -27,14 +27,18 @@
 struct includes
 {
   struct includes *next;        /* next directory to search */
+  /*要包含的目录*/
   const char *dir;              /* directory */
-  int len;
+  int len;/*目录字符串长度*/
 };
 
 typedef struct includes includes;
 
+/*保存系统中所有需要include的path目录*/
 static includes *dir_list;              /* the list of path directories */
+/*最后一个节点*/
 static includes *dir_list_end;          /* the end of same */
+/*dir_list中最长的目录名称*/
 static int dir_max_length;              /* length of longest directory name */
 
 
@@ -76,14 +80,16 @@ include_env_init (void)
 }
 
 void
-add_include_directory (const char *dir)
+add_include_directory (const char *dir/*要包含的目录*/)
 {
   includes *incl;
 
   if (no_gnu_extensions)
+      /*指明拒绝gnu扩展，直接返回*/
     return;
 
   if (*dir == '\0')
+      /*如果未给出参数，则采用默认参数'.'*/
     dir = ".";
 
   incl = (includes *) xmalloc (sizeof (struct includes));
@@ -91,13 +97,17 @@ add_include_directory (const char *dir)
   incl->len = strlen (dir);
   incl->dir = xstrdup (dir);
 
+  /*更新链表中最长的include目录长度*/
   if (incl->len > dir_max_length) /* remember len of longest directory */
     dir_max_length = incl->len;
 
   if (dir_list_end == NULL)
+      /*首次设置，使dir_list指向首个include目录*/
     dir_list = incl;
   else
+      /*使最后一个节点串上incl*/
     dir_list_end->next = incl;
+  /*指向最后一个include*/
   dir_list_end = incl;
 
 #ifdef DEBUG_INCL

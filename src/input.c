@@ -75,8 +75,10 @@ typedef enum input_type input_type;
 
 struct input_block
 {
+    /*指向上一个input block(读时沿此链，从当前向上一个读）*/
   struct input_block *prev;     /* previous input_block on the input stack */
   input_type type;              /* see enum values */
+  /*文件名称*/
   const char *file;             /* file where this input is from */
   int line;                     /* line where this input is from */
   union
@@ -84,12 +86,14 @@ struct input_block
       struct
         {
           char *string;         /* remaining string value */
+          /*字符串中NULL所在位置*/
           char *end;            /* terminating NUL of string */
         }
         u_s;    /* INPUT_STRING */
       struct
         {
           FILE *fp;                  /* input file handle */
+          /*指示peek看到EOF*/
           bool_bitfield end : 1;     /* true if peek has seen EOF */
           bool_bitfield close : 1;   /* true if we should close file on pop */
           bool_bitfield advance : 1; /* track previous start_of_input_line */
@@ -104,10 +108,10 @@ typedef struct input_block input_block;
 
 
 /* Current input file name.  */
-const char *current_file;
+const char *current_file;/*记录当前文件*/
 
 /* Current input line number.  */
-int current_line;
+int current_line;/*记录当前行号*/
 
 /* Obstack for storing individual tokens.  */
 static struct obstack token_stack;
@@ -143,12 +147,12 @@ static bool input_change;
 #define CHAR_MACRO      257     /* character return for MACRO token */
 
 /* Quote chars.  */
-STRING rquote;
-STRING lquote;
+STRING rquote;/*引用左符号*/
+STRING lquote;/*上用右符号*/
 
 /* Comment chars.  */
-STRING bcomm;
-STRING ecomm;
+STRING bcomm;/*注释起始符*/
+STRING ecomm;/*注释结束符*/
 
 #ifdef ENABLE_CHANGEWORD
 
@@ -179,8 +183,9 @@ static void pop_input (void);
 `-------------------------------------------------------------------*/
 
 void
-push_file (FILE *fp, const char *title, bool close_when_done)
+push_file (FILE *fp, const char *title, bool close_when_done/*处理完成，是否关闭*/)
 {
+    /*增加文件*/
   input_block *i;
 
   if (next != NULL)
@@ -194,18 +199,19 @@ push_file (FILE *fp, const char *title, bool close_when_done)
 
   i = (input_block *) obstack_alloc (current_input,
                                      sizeof (struct input_block));
+  /*指明输入来自于文件*/
   i->type = INPUT_FILE;
   i->file = (char *) obstack_copy0 (&file_names, title, strlen (title));
   i->line = 1;
   input_change = true;
 
-  i->u.u_f.fp = fp;
+  i->u.u_f.fp = fp;/*指定输入文件*/
   i->u.u_f.end = false;
   i->u.u_f.close = close_when_done;
   i->u.u_f.advance = start_of_input_line;
   output_current_line = -1;
 
-  i->prev = isp;
+  i->prev = isp;/*将当前input block串入*/
   isp = i;
 }
 
@@ -218,6 +224,7 @@ push_file (FILE *fp, const char *title, bool close_when_done)
 void
 push_macro (builtin_func *func)
 {
+    /*增加macro*/
   input_block *i;
 
   if (next != NULL)
@@ -226,14 +233,16 @@ push_macro (builtin_func *func)
       next = NULL;
     }
 
+  /*申请input_block*/
   i = (input_block *) obstack_alloc (current_input,
                                      sizeof (struct input_block));
-  i->type = INPUT_MACRO;
+  i->type = INPUT_MACRO;/*指明输入宏*/
   i->file = current_file;
   i->line = current_line;
-  input_change = true;
+  input_change = true;/*指明input变更*/
 
   i->u.func = func;
+  /*将i串入到isp*/
   i->prev = isp;
   isp = i;
 }
@@ -285,8 +294,11 @@ push_string_finish (void)
 
   if (obstack_object_size (current_input) > 0)
     {
+      /*取object输入长度*/
       size_t len = obstack_object_size (current_input);
+      /*增加'\0'*/
       obstack_1grow (current_input, '\0');
+      /*自current_input中拿出输入内容*/
       next->u.u_s.string = (char *) obstack_finish (current_input);
       next->u.u_s.end = next->u.u_s.string + len;
       next->prev = isp;
@@ -320,6 +332,7 @@ push_wrapup (const char *s)
   i->type = INPUT_STRING;
   i->file = current_file;
   i->line = current_line;
+  /*复制字符串*/
   i->u.u_s.string = (char *) obstack_copy0 (wrapup_stack, s, len);
   i->u.u_s.end = i->u.u_s.string + len;
   wsp = i;
@@ -336,6 +349,7 @@ push_wrapup (const char *s)
 static void
 pop_input (void)
 {
+    /*指向上一个input block*/
   input_block *tmp = isp->prev;
 
   switch (isp->type)
@@ -356,6 +370,7 @@ pop_input (void)
 
       if (ferror (isp->u.u_f.fp))
         {
+          /*input文件有错误*/
           M4ERROR ((warning_status, 0, _("read error")));
           if (isp->u.u_f.close)
             fclose (isp->u.u_f.fp);
@@ -378,8 +393,8 @@ pop_input (void)
   obstack_free (current_input, isp);
   next = NULL; /* might be set in push_string_init () */
 
-  isp = tmp;
-  input_change = true;
+  isp = tmp;/*更新成上一个input block*/
+  input_change = true;/*指明input已变更*/
 }
 
 /*-------------------------------------------------------------------.
@@ -431,11 +446,13 @@ init_macro_token (token_data *td)
 {
   if (isp->type != INPUT_MACRO)
     {
+      /*仅isp->type为input macro时可调用*/
       M4ERROR ((warning_status, 0,
                 "INTERNAL ERROR: bad call to init_macro_token ()"));
       abort ();
     }
 
+  /*取isp指向的input block,指定token_data为func*/
   TOKEN_DATA_TYPE (td) = TOKEN_FUNC;
   TOKEN_DATA_FUNC (td) = isp->u.func;
 }
@@ -457,34 +474,43 @@ peek_input (void)
   while (1)
     {
       if (block == NULL)
+        /*如果block为空，则指明EOF*/
         return CHAR_EOF;
 
       switch (block->type)
         {
         case INPUT_STRING:
+            /*当前block是string类型,自string中向前看一个字符*/
           ch = to_uchar (block->u.u_s.string[0]);
           if (ch != '\0')
             return ch;
           break;
 
         case INPUT_FILE:
+          /*当前block是一个文件，自文件中提前读取一个字符*/
           ch = getc (block->u.u_f.fp);
           if (ch != EOF)
             {
+              /*如果此字符不为EOF,则回退对此字符的读取*/
               ungetc (ch, block->u.u_f.fp);
+              /*返回读取到的字符*/
               return ch;
             }
+          /*指明此文件读取完成*/
           block->u.u_f.end = true;
           break;
 
         case INPUT_MACRO:
+            /*input_macro情况*/
           return CHAR_MACRO;
 
         default:
+            /*错误的block类型*/
           M4ERROR ((warning_status, 0,
                     "INTERNAL ERROR: input stack botch in peek_input ()"));
           abort ();
         }
+      /*尝试取上一个block*/
       block = block->prev;
     }
 }
@@ -529,12 +555,14 @@ next_char_1 (void)
       switch (isp->type)
         {
         case INPUT_STRING:
+            /*输入字符串前移*/
           ch = to_uchar (*isp->u.u_s.string++);
           if (ch != '\0')
             return ch;
           break;
 
         case INPUT_FILE:
+            /*消费掉输入文件的一个字符*/
           if (start_of_input_line)
             {
               start_of_input_line = false;
@@ -580,6 +608,7 @@ skip_line (void)
   const char *file = current_file;
   int line = current_line;
 
+  /*向前查找直接达到'\n'或EOF*/
   while ((ch = next_char ()) != CHAR_EOF && ch != '\n')
     ;
   if (ch == CHAR_EOF)
@@ -613,7 +642,10 @@ match_input (const char *s, bool consume)
   const char *t;
   bool result = false;
 
+  /*提前看一个字符*/
   ch = peek_input ();
+
+  /*检查ch是否与s相等，如果不等，则返回false*/
   if (ch != to_uchar (*s))
     return false;                       /* fail */
 
@@ -624,6 +656,7 @@ match_input (const char *s, bool consume)
       return true;                      /* short match */
     }
 
+  /*消费预读的字符*/
   next_char ();
   for (n = 1, t = s++; peek_input () == to_uchar (*s++); )
     {
@@ -660,8 +693,11 @@ match_input (const char *s, bool consume)
 `--------------------------------------------------------------------*/
 
 #define MATCH(ch, s, consume)                                           \
+    /*s首字符与ch相等*/\
   (to_uchar ((s)[0]) == (ch)                                            \
+          /*ch不为'\0'*/\
    && (ch) != '\0'                                                      \
+   /*如果s[1]为空，则不继续，否则执行match_input*/\
    && ((s)[1] == '\0' || (match_input ((s) + (consume), consume))))
 
 
@@ -695,12 +731,19 @@ input_init (void)
 
   start_of_input_line = false;
 
+  /*左引用符*/
   lquote.string = xstrdup (DEF_LQUOTE);
   lquote.length = strlen (lquote.string);
+
+  /*右引用符*/
   rquote.string = xstrdup (DEF_RQUOTE);
   rquote.length = strlen (rquote.string);
+
+  /*注释起始符*/
   bcomm.string = xstrdup (DEF_BCOMM);
   bcomm.length = strlen (bcomm.string);
+
+  /*注释终止符*/
   ecomm.string = xstrdup (DEF_ECOMM);
   ecomm.length = strlen (ecomm.string);
 
@@ -719,6 +762,7 @@ input_init (void)
 void
 set_quotes (const char *lq, const char *rq)
 {
+    /*移除掉旧的lquote,rquote*/
   free (lquote.string);
   free (rquote.string);
 
@@ -731,12 +775,15 @@ set_quotes (const char *lq, const char *rq)
      some other implementations do.  */
   if (!lq)
     {
+      /*没有指定lq,则使用默认quote*/
       lq = DEF_LQUOTE;
       rq = DEF_RQUOTE;
     }
   else if (!rq || (*lq && !*rq))
+      /*指定了lq,但未指定rq,rq使用默认quote*/
     rq = DEF_RQUOTE;
 
+  /*设置lquote,rquote*/
   lquote.string = xstrdup (lq);
   lquote.length = strlen (lquote.string);
   rquote.string = xstrdup (rq);
@@ -746,6 +793,7 @@ set_quotes (const char *lq, const char *rq)
 void
 set_comment (const char *bc, const char *ec)
 {
+    /*释放旧的comment起始符及终止符*/
   free (bcomm.string);
   free (ecomm.string);
 
@@ -761,6 +809,7 @@ set_comment (const char *bc, const char *ec)
   else if (!ec || (*bc && !*ec))
     ec = DEF_ECOMM;
 
+  /*设置注释的起始符与终止符*/
   bcomm.string = xstrdup (bc);
   bcomm.length = strlen (bcomm.string);
   ecomm.string = xstrdup (ec);
@@ -827,7 +876,7 @@ set_word_regexp (const char *regexp)
 `--------------------------------------------------------------------*/
 
 token_type
-next_token (token_data *td, int *line)
+next_token (token_data *td/*出参，取token数据*/, int *line/*出参，取行号*/)
 {
   int ch;
   int quote_level;
@@ -839,14 +888,16 @@ next_token (token_data *td, int *line)
   const char *file;
   int dummy;
 
+  /*释放token_bottom*/
   obstack_free (&token_stack, token_bottom);
   if (!line)
     line = &dummy;
 
  /* Can't consume character until after CHAR_MACRO is handled.  */
-  ch = peek_input ();
+  ch = peek_input ();/*提前看一个字符*/
   if (ch == CHAR_EOF)
     {
+      /*input block为空，转为EOF*/
 #ifdef DEBUG_INPUT
       xfprintf (stderr, "next_token -> EOF\n");
 #endif
@@ -855,6 +906,7 @@ next_token (token_data *td, int *line)
     }
   if (ch == CHAR_MACRO)
     {
+      /*当前为macro token,则初始化td并返回*/
       init_macro_token (td);
       next_char ();
 #ifdef DEBUG_INPUT
@@ -864,32 +916,40 @@ next_token (token_data *td, int *line)
       return TOKEN_MACDEF;
     }
 
+  /*消费掉预读取的ch*/
   next_char (); /* Consume character we already peeked at.  */
   file = current_file;
   *line = current_line;
   if (MATCH (ch, bcomm.string, true))
     {
+      /*ch为注释起始符，将其添加进token_stack*/
       obstack_grow (&token_stack, bcomm.string, bcomm.length);
+      /*消耗ch,直到遇到end of comment char*/
       while ((ch = next_char ()) != CHAR_EOF
              && !MATCH (ch, ecomm.string, true))
+        /*将注释内容入栈到token_stack*/
         obstack_1grow (&token_stack, ch);
       if (ch != CHAR_EOF)
+          /*遇到end of comments char,此字符入栈*/
         obstack_grow (&token_stack, ecomm.string, ecomm.length);
       else
+        /*遇到EOF,报错*/
         /* current_file changed to "" if we see CHAR_EOF, use the
            previous value we stored earlier.  */
         m4_failure_at_line (0, file, *line, _("ERROR: end of file in comment"));
 
-      type = TOKEN_STRING;
+      type = TOKEN_STRING;/*输出为字符串*/
     }
   else if (default_word_regexp && (c_isalpha (ch) || ch == '_'))
     {
+      /*ch为字每或下划线，则尝试进行token识别,填充到token_stack中*/
       obstack_1grow (&token_stack, ch);
       while ((ch = peek_input ()) != CHAR_EOF && (c_isalnum (ch) || ch == '_'))
         {
           obstack_1grow (&token_stack, ch);
           next_char ();
         }
+      /*当前类型为word*/
       type = TOKEN_WORD;
     }
 
@@ -934,6 +994,7 @@ next_token (token_data *td, int *line)
 
   else if (!MATCH (ch, lquote.string, true))
     {
+      /*当前ch不是左引用符，检查是否为特殊符号*/
       switch (ch)
         {
         case '(':
@@ -949,11 +1010,12 @@ next_token (token_data *td, int *line)
           type = TOKEN_SIMPLE;
           break;
         }
-      obstack_1grow (&token_stack, ch);
+      obstack_1grow (&token_stack, ch);/*将ch填充到token_stack*/
     }
   else
     {
-      bool fast = lquote.length == 1 && rquote.length == 1;
+      /*遇到左引用符*/
+      bool fast = lquote.length == 1 && rquote.length == 1;/*左右引用各仅有一个字符*/
       quote_level = 1;
       while (1)
         {
@@ -962,6 +1024,7 @@ next_token (token_data *td, int *line)
                                 ? isp->u.u_s.string : NULL);
           if (buffer && *buffer)
             {
+              /*isp字符串长度*/
               size_t len = isp->u.u_s.end - buffer;
               const char *p = buffer;
               do
@@ -986,6 +1049,7 @@ next_token (token_data *td, int *line)
                 }
               else
                 {
+                  /*将buffer内容存入*/
                   obstack_grow (&token_stack, buffer, len);
                   isp->u.u_s.string += len;
                   continue;
@@ -1017,8 +1081,10 @@ next_token (token_data *td, int *line)
       type = TOKEN_STRING;
     }
 
+  /*为token添加字符串结束符*/
   obstack_1grow (&token_stack, '\0');
 
+  /*设置td*/
   TOKEN_DATA_TYPE (td) = TOKEN_TEXT;
   TOKEN_DATA_TEXT (td) = (char *) obstack_finish (&token_stack);
 #ifdef ENABLE_CHANGEWORD
@@ -1040,9 +1106,11 @@ next_token (token_data *td, int *line)
 token_type
 peek_token (void)
 {
+    /*向前看一个token*/
   token_type result;
-  int ch = peek_input ();
+  int ch = peek_input ();/*向前看一个字符*/
 
+  /*依据向前看的字符，获知当前为哪类token*/
   if (ch == CHAR_EOF)
     {
       result = TOKEN_EOF;
@@ -1053,6 +1121,7 @@ peek_token (void)
     }
   else if (MATCH (ch, bcomm.string, false))
     {
+      /*遇到注释起始符*/
       result = TOKEN_STRING;
     }
   else if ((default_word_regexp && (c_isalpha (ch) || ch == '_'))
@@ -1065,18 +1134,22 @@ peek_token (void)
     }
   else if (MATCH (ch, lquote.string, false))
     {
+      /*遇到左引用符*/
       result = TOKEN_STRING;
     }
   else
     switch (ch)
       {
       case '(':
+          /*遇到'('*/
         result = TOKEN_OPEN;
         break;
       case ',':
+          /*遇到comma*/
         result = TOKEN_COMMA;
         break;
       case ')':
+          /*遇到')'*/
         result = TOKEN_CLOSE;
         break;
       default:

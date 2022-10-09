@@ -527,6 +527,7 @@ make_room_for (int length)
 
 #define OUTPUT_CHARACTER(Char) \
   if (output_file)                                                      \
+  /*输出到文件，填充到output_file*/\
     putc ((Char), output_file);                                         \
   else if (output_unused == 0)                                          \
     output_character_helper ((Char));                                   \
@@ -565,6 +566,7 @@ output_text (const char *text, int length)
 
   if (output_file)
     {
+      /*输出内容到文件*/
       count = fwrite (text, length, 1, output_file);
       if (count != 1)
         m4_failure (errno, _("ERROR: copying inserted file"));
@@ -593,7 +595,7 @@ output_text (const char *text, int length)
 `--------------------------------------------------------------------*/
 
 void
-shipout_text (struct obstack *obs, const char *text, int length, int line)
+shipout_text (struct obstack *obs, const char *text/*字符串*/, int length/*字符串长度*/, int line/*所在行号*/)
 {
   static bool start_of_output_line = true;
   const char *cursor;
@@ -602,6 +604,7 @@ shipout_text (struct obstack *obs, const char *text, int length, int line)
 
   if (obs != NULL)
     {
+      /*输出到obs*/
       obstack_grow (obs, text, length);
       return;
     }
@@ -633,6 +636,7 @@ shipout_text (struct obstack *obs, const char *text, int length, int line)
         /* Optimize longer texts.  */
 
       default:
+          /*输出长字符串*/
         output_text (text, length);
       }
   else

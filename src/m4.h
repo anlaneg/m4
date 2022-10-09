@@ -259,6 +259,7 @@ enum token_type
   TOKEN_COMMA,                  /* , */
   TOKEN_CLOSE,                  /* ) */
   TOKEN_SIMPLE,                 /* any other single character */
+  /*宏定义*/
   TOKEN_MACDEF                  /* a macro's definition (see "defn") */
 };
 
@@ -272,27 +273,32 @@ enum token_data_type
 
 struct token_data
 {
+  /*指明data type*/
   enum token_data_type type;
   union
     {
       struct
         {
-          char *text;
+          char *text;/*text情况，指向内容*/
 #ifdef ENABLE_CHANGEWORD
-          char *original_text;
+          char *original_text;/*指向原始内容*/
 #endif
         }
       u_t;
-      builtin_func *func;
+      builtin_func *func;/*函数情况下指定函数指针*/
     }
   u;
 };
 
+/*取token data类型*/
 #define TOKEN_DATA_TYPE(Td)             ((Td)->type)
+/*取text token内容（字段串）*/
 #define TOKEN_DATA_TEXT(Td)             ((Td)->u.u_t.text)
 #ifdef ENABLE_CHANGEWORD
+/* 取text token内容（原始串）*/
 # define TOKEN_DATA_ORIG_TEXT(Td)       ((Td)->u.u_t.original_text)
 #endif
+/*取function token的函数指针*/
 #define TOKEN_DATA_FUNC(Td)             ((Td)->u.func)
 
 typedef enum token_type token_type;
@@ -360,6 +366,7 @@ enum symbol_lookup
 /* Symbol table entry.  */
 struct symbol
 {
+  /*符号的栈空间*/
   struct symbol *stack; /* pushdef stack */
   struct symbol *next; /* hash bucket chain */
   bool_bitfield traced : 1;

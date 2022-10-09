@@ -93,7 +93,7 @@ profile_strcmp (const char *s1, const char *s2)
 `------------------------------------------------------------------*/
 
 /* Pointer to symbol table.  */
-static symbol **symtab;
+static symbol **symtab;/*全局符号表*/
 
 void
 symtab_init (void)
@@ -123,6 +123,7 @@ symtab_init (void)
 static size_t ATTRIBUTE_PURE
 hash (const char *s)
 {
+    /*字符串hashcode计算*/
   register size_t val = 0;
 
   register const char *ptr = s;
@@ -166,7 +167,7 @@ free_symbol (symbol *sym)
 `-------------------------------------------------------------------*/
 
 symbol *
-lookup_symbol (const char *name, symbol_lookup mode)
+lookup_symbol (const char *name/*符号名称*/, symbol_lookup mode/*对应的操作模式*/)
 {
   size_t h;
   int cmp = 1;
@@ -178,6 +179,7 @@ lookup_symbol (const char *name, symbol_lookup mode)
   profiles[mode].entry++;
 #endif /* DEBUG_SYM */
 
+  /*确定此符号对应的桶*/
   h = hash (name);
   sym = symtab[h % hash_table_size];
 
@@ -185,19 +187,22 @@ lookup_symbol (const char *name, symbol_lookup mode)
     {
       cmp = (h > sym->hash) - (h < sym->hash);
       if (cmp == 0)
+        /*hash相等，检查字符串是否相等*/
         cmp = strcmp (SYMBOL_NAME (sym), name);
       if (cmp >= 0)
+        /*由于按顺序摆放，故遇到>=0,则不区配或者匹配，直接退出*/
         break;
     }
 
   /* If just searching, return status of search.  */
 
   if (mode == SYMBOL_LOOKUP)
+    /*当前如为查询模式，返回查询结果*/
     return cmp == 0 ? sym : NULL;
 
   /* Symbol not found.  */
 
-  spp = (prev != NULL) ?  &prev->next : &symtab[h % hash_table_size];
+  spp = (prev != NULL) ?  &prev->next/*挂在冲突链后面*/ : &symtab[h % hash_table_size]/*桶为空情况*/;
 
   switch (mode)
     {
@@ -211,30 +216,35 @@ lookup_symbol (const char *name, symbol_lookup mode)
 
       if (cmp == 0 && sym != NULL)
         {
+          /*在hash表中找到了此符号，这里需要替换*/
           if (SYMBOL_PENDING_EXPANSIONS (sym) > 0)
             {
-              symbol *old = sym;
+              symbol *old = sym;/*hash表中已有符号*/
               SYMBOL_DELETED (old) = true;
 
+              /*申请新的符号*/
               sym = (symbol *) xmalloc (sizeof (symbol));
               SYMBOL_TYPE (sym) = TOKEN_VOID;
               SYMBOL_TRACED (sym) = SYMBOL_TRACED (old);
               sym->hash = h;
-              SYMBOL_NAME (sym) = old->name;
-              old->name = xstrdup (name);
+              SYMBOL_NAME (sym) = old->name;/*填接占用旧的名称*/
+              old->name = xstrdup (name);/*旧的符号再复制一次name*/
               SYMBOL_MACRO_ARGS (sym) = false;
               SYMBOL_BLIND_NO_ARGS (sym) = false;
               SYMBOL_DELETED (sym) = false;
               SYMBOL_PENDING_EXPANSIONS (sym) = 0;
 
-              SYMBOL_STACK (sym) = SYMBOL_STACK (old);
-              SYMBOL_STACK (old) = NULL;
+              SYMBOL_STACK (sym) = SYMBOL_STACK (old);/*直接占用旧的栈*/
+              SYMBOL_STACK (old) = NULL;/*旧的符号的栈置为NULL*/
+              /*将旧的移除，新的加入*/
               sym->next = old->next;
               old->next = NULL;
               *spp = sym;
             }
+          /*如非pending_expansions，直接返回符号*/
           return sym;
         }
+      /*当前需要插入，且前面没有查到符号，这里执行添加*/
       FALLTHROUGH;
 
     case SYMBOL_PUSHDEF:
@@ -242,15 +252,17 @@ lookup_symbol (const char *name, symbol_lookup mode)
       /* Insert a name in the symbol table.  If there is already a symbol
          with the name, insert this in front of it.  */
 
+      /*增加符号表*/
       sym = (symbol *) xmalloc (sizeof (symbol));
       SYMBOL_TYPE (sym) = TOKEN_VOID;
       SYMBOL_TRACED (sym) = false;
-      sym->hash = h;
+      sym->hash = h;/*符号对应的hashcode*/
       SYMBOL_MACRO_ARGS (sym) = false;
       SYMBOL_BLIND_NO_ARGS (sym) = false;
       SYMBOL_DELETED (sym) = false;
       SYMBOL_PENDING_EXPANSIONS (sym) = 0;
 
+      /*将符号串入*/
       SYMBOL_STACK (sym) = NULL;
       sym->next = *spp;
       *spp = sym;
@@ -322,6 +334,7 @@ lookup_symbol (const char *name, symbol_lookup mode)
       }
       return NULL;
 
+      /*其它情况*/
     case SYMBOL_LOOKUP:
     default:
       M4ERROR ((warning_status, 0,

@@ -90,16 +90,23 @@ DECLARE (m4_undivert);
 
 #undef DECLARE
 
+/*内建列表*/
 static builtin const builtin_tab[] =
 {
 
   /* name               GNUext  macros  blind   function */
 
+  /*显示当前文件*/
   { "__file__",         true,   false,  false,  m4___file__ },
+  /*显示当前行号*/
   { "__line__",         true,   false,  false,  m4___line__ },
+  /*显示当前程序名称*/
   { "__program__",      true,   false,  false,  m4___program__ },
+  /*调用内置函数*/
   { "builtin",          true,   true,   true,   m4_builtin },
+  /*变更系统的默认注释起始符与注释终止符*/
   { "changecom",        false,  false,  false,  m4_changecom },
+  /*变更系统的默认quote*/
   { "changequote",      false,  false,  false,  m4_changequote },
 #ifdef ENABLE_CHANGEWORD
   { "changeword",       true,   false,  true,   m4_changeword },
@@ -107,6 +114,7 @@ static builtin const builtin_tab[] =
   { "debugmode",        true,   false,  false,  m4_debugmode },
   { "debugfile",        true,   false,  false,  m4_debugfile },
   { "decr",             false,  false,  true,   m4_decr },
+  /*增加宏定义*/
   { "define",           false,  true,   true,   m4_define },
   { "defn",             false,  false,  true,   m4_defn },
   { "divert",           false,  false,  false,  m4_divert },
@@ -117,6 +125,7 @@ static builtin const builtin_tab[] =
   { "esyscmd",          true,   false,  true,   m4_esyscmd },
   { "eval",             false,  false,  true,   m4_eval },
   { "format",           true,   false,  true,   m4_format },
+  /*如果argv1符号存在，则输出argv2,否则输出argv3*/
   { "ifdef",            false,  false,  true,   m4_ifdef },
   { "ifelse",           false,  false,  true,   m4_ifelse },
   { "include",          false,  false,  true,   m4_include },
@@ -197,6 +206,7 @@ find_builtin_by_name (const char *name)
 {
   const builtin *bp;
 
+  /*给定名称查询bp*/
   for (bp = &builtin_tab[0]; bp->name != NULL; bp++)
     if (STREQ (bp->name, name))
       return bp;
@@ -209,15 +219,15 @@ find_builtin_by_name (const char *name)
 `----------------------------------------------------------------*/
 
 void
-define_builtin (const char *name, const builtin *bp, symbol_lookup mode)
+define_builtin (const char *name/*符号名称*/, const builtin *bp/*内建函数*/, symbol_lookup mode)
 {
   symbol *sym;
 
   sym = lookup_symbol (name, mode);
-  SYMBOL_TYPE (sym) = TOKEN_FUNC;
+  SYMBOL_TYPE (sym) = TOKEN_FUNC;/*指明此符号为函数*/
   SYMBOL_MACRO_ARGS (sym) = bp->groks_macro_args;
   SYMBOL_BLIND_NO_ARGS (sym) = bp->blind_if_no_args;
-  SYMBOL_FUNC (sym) = bp->func;
+  SYMBOL_FUNC (sym) = bp->func;/*指明此符号函数指针*/
 }
 
 /* Storage for the compiled regular expression of
@@ -286,15 +296,18 @@ free_macro_sequence (void)
 `-----------------------------------------------------------------*/
 
 void
-define_user_macro (const char *name, const char *text, symbol_lookup mode)
+define_user_macro (const char *name/*宏名称*/, const char *text/*宏内容*/, symbol_lookup mode)
 {
   symbol *s;
   char *defn = xstrdup (text ? text : "");
 
+  /*通过宏名称查询符号*/
   s = lookup_symbol (name, mode);
   if (SYMBOL_TYPE (s) == TOKEN_TEXT)
+      /*丢弃掉旧的内容*/
     free (SYMBOL_TEXT (s));
 
+  /*指明此符号为text*/
   SYMBOL_TYPE (s) = TOKEN_TEXT;
   SYMBOL_TEXT (s) = defn;
 
@@ -340,29 +353,38 @@ builtin_init (void)
   const predefined *pp;
   char *string;
 
+  /*遍历bulitin_tab*/
   for (bp = &builtin_tab[0]; bp->name != NULL; bp++)
     if (!no_gnu_extensions || !bp->gnu_extension)
       {
+        /*等价于if (!(no_gnu_extensions && bp->gnu_extension)),如果禁止gnu
+         * 扩展，则仅当bp不是gnu扩展时进入*/
         if (prefix_all_builtins)
           {
+            /*所有内建添加m4_前缀*/
             string = (char *) xmalloc (strlen (bp->name) + 4);
             strcpy (string, "m4_");
             strcat (string, bp->name);
+            /*添加内建符号*/
             define_builtin (string, bp, SYMBOL_INSERT);
             free (string);
           }
         else
+            /*不添加前缀，直接添加内建符号*/
           define_builtin (bp->name, bp, SYMBOL_INSERT);
       }
 
+  /*遍历predefined_tab表*/
   for (pp = &predefined_tab[0]; pp->func != NULL; pp++)
     if (no_gnu_extensions)
       {
+        /*禁止gnu扩展后，只添加unix name*/
         if (pp->unix_name != NULL)
           define_user_macro (pp->unix_name, pp->func, SYMBOL_INSERT);
       }
     else
       {
+        /*不禁止gnu扩展，则仅添加gun name*/
         if (pp->gnu_name != NULL)
           define_user_macro (pp->gnu_name, pp->func, SYMBOL_INSERT);
       }
@@ -383,6 +405,7 @@ bad_argc (token_data *name, int argc, int min, int max)
 
   if (min > 0 && argc < min)
     {
+      /*有min参数要求，且当前参数小于min,报错*/
       if (!suppress_warnings)
         M4ERROR ((warning_status, 0,
                   _("Warning: too few arguments to builtin `%s'"),
@@ -390,6 +413,7 @@ bad_argc (token_data *name, int argc, int min, int max)
       isbad = true;
     }
   else if (max > 0 && argc > max && !suppress_warnings)
+      /*有max参数要求，且当前参数大于max,报错（注意，参数过多时并不是bad argc)*/
     M4ERROR ((warning_status, 0,
               _("Warning: excess arguments to builtin `%s' ignored"),
               TOKEN_DATA_TEXT (name)));
@@ -539,13 +563,15 @@ dump_args (struct obstack *obs, int argc, token_data **argv,
 `-------------------------------------------------------------------*/
 
 static void
-define_macro (int argc, token_data **argv, symbol_lookup mode)
+define_macro (int argc/*参数数*/, token_data **argv/*参数列表*/, symbol_lookup mode)
 {
   const builtin *bp;
 
   if (bad_argc (argv[0], argc, 2, 3))
+    /*最少两个参数，最多3个参数*/
     return;
 
+  /*第一个参数必须为字符串*/
   if (TOKEN_DATA_TYPE (argv[1]) != TOKEN_TEXT)
     {
       M4ERROR ((warning_status, 0,
@@ -555,6 +581,7 @@ define_macro (int argc, token_data **argv, symbol_lookup mode)
 
   if (argc == 2)
     {
+      /*只有两个参数，则宏内容为空，执行定义*/
       define_user_macro (ARG (1), "", mode);
       return;
     }
@@ -562,10 +589,12 @@ define_macro (int argc, token_data **argv, symbol_lookup mode)
   switch (TOKEN_DATA_TYPE (argv[2]))
     {
     case TOKEN_TEXT:
+      /*第二个参数为text,则定义user macro*/
       define_user_macro (ARG (1), ARG (2), mode);
       break;
 
     case TOKEN_FUNC:
+      /*第二个参数为function,通过fun地址，查询bp*/
       bp = find_builtin_by_addr (TOKEN_DATA_FUNC (argv[2]));
       if (bp == NULL)
         return;
@@ -573,6 +602,7 @@ define_macro (int argc, token_data **argv, symbol_lookup mode)
         define_builtin (ARG (1), bp, mode);
       break;
 
+      /*其它不合法的内容*/
     case TOKEN_VOID:
     default:
       M4ERROR ((warning_status, 0,
@@ -584,15 +614,18 @@ define_macro (int argc, token_data **argv, symbol_lookup mode)
 static void
 m4_define (struct obstack *obs MAYBE_UNUSED, int argc, token_data **argv)
 {
+    /*增加新的宏*/
   define_macro (argc, argv, SYMBOL_INSERT);
 }
 
 static void
 m4_undefine (struct obstack *obs MAYBE_UNUSED, int argc, token_data **argv)
 {
+    /*移除宏定义*/
   int i;
   if (bad_argc (argv[0], argc, 2, -1))
     return;
+  /*找到符号，并将符号移除*/
   for (i = 1; i < argc; i++)
     lookup_symbol (ARG (i), SYMBOL_DELETE);
 }
@@ -625,16 +658,21 @@ m4_ifdef (struct obstack *obs, int argc, token_data **argv)
 
   if (bad_argc (argv[0], argc, 3, 4))
     return;
+  /*查询argv1对应的符号*/
   s = lookup_symbol (ARG (1), SYMBOL_LOOKUP);
 
   if (s != NULL && SYMBOL_TYPE (s) != TOKEN_VOID)
+      /*如果符号不存在，则参数为argv2*/
     result = ARG (2);
   else if (argc >= 4)
+      /*如果符号存在，则符号为argv3*/
     result = ARG (3);
   else
+      /*如果符号存在，则用户未指定argv3,则默认为NULL（即不输出）*/
     result = NULL;
 
   if (result != NULL)
+      /*输出结果*/
     obstack_grow (obs, result, strlen (result));
 }
 
@@ -645,9 +683,11 @@ m4_ifelse (struct obstack *obs, int argc, token_data **argv)
   token_data *me = argv[0];
 
   if (argc == 2)
+      /*参数为2时直接返回*/
     return;
 
   if (bad_argc (me, argc, 4, -1))
+      /*参数至少为4*/
     return;
   else
     /* Diagnose excess arguments if 5, 8, 11, etc., actual arguments.  */
@@ -656,13 +696,23 @@ m4_ifelse (struct obstack *obs, int argc, token_data **argv)
   argv++;
   argc--;
 
+  /* 形如以下逻辑？
+   * (0) 简单的if语句 (argc ==4)
+   *    if (arg(0) == arg(1) result=arg(2)
+   * (1) 简单的if else语句：(argc == 5)
+   *    if (arg(0) == arg(1)) result=arg(2) else result=arg(3)
+   * （2）可不断循环的if else语句 (argc > 5)
+   *    if (arg($n+0) == arg($n+1)) result=arg($+2) else ...
+   * */
   result = NULL;
   while (result == NULL)
 
     if (STREQ (ARG (0), ARG (1)))
+        /*参数0,1相等，则结果为arg(2)*/
       result = ARG (2);
 
     else
+        /*否则，argc为3时，由于不相等，故直接返回，result为空串*/
       switch (argc)
         {
         case 3:
@@ -670,10 +720,12 @@ m4_ifelse (struct obstack *obs, int argc, token_data **argv)
 
         case 4:
         case 5:
+            /*4，5时采用arg(3)*/
           result = ARG (3);
           break;
 
         default:
+            /*多于3个，则减3后继续检查。*/
           argc -= 3;
           argv += 3;
         }
@@ -808,22 +860,29 @@ m4_builtin (struct obstack *obs, int argc, token_data **argv)
   const char *name;
 
   if (bad_argc (argv[0], argc, 2, -1))
+      /*参数数目至少必须有2个*/
     return;
   if (TOKEN_DATA_TYPE (argv[1]) != TOKEN_TEXT)
     {
+      /*首个参数必须为text*/
       M4ERROR ((warning_status, 0,
                 _("Warning: %s: invalid macro name ignored"), ARG (0)));
       return;
     }
 
+  /*取参数值做为函数名称*/
   name = ARG (1);
+
+  /*通过此名称查找bp*/
   bp = find_builtin_by_name (name);
   if (bp->func == m4_placeholder)
+      /*bp不能为空*/
     M4ERROR ((warning_status, 0,
               _("undefined builtin `%s'"), name));
   else
     {
       int i;
+      /*构造调用对应的args*/
       if (! bp->groks_macro_args)
         for (i = 2; i < argc; i++)
           if (TOKEN_DATA_TYPE (argv[i]) != TOKEN_TEXT)
@@ -831,6 +890,7 @@ m4_builtin (struct obstack *obs, int argc, token_data **argv)
               TOKEN_DATA_TYPE (argv[i]) = TOKEN_TEXT;
               TOKEN_DATA_TEXT (argv[i]) = (char *) "";
             }
+      /*调用bp对应的函数实现*/
       bp->func (obs, argc - 1, argv + 1);
     }
 }
@@ -898,8 +958,10 @@ m4_defn (struct obstack *obs, int argc, token_data **argv)
       const char *arg = ARG((int) i);
       s = lookup_symbol (arg, SYMBOL_LOOKUP);
       if (s == NULL)
+          /*如果arg对应的符号不存在，则continue*/
         continue;
 
+      /*arg对应的符号已存在*/
       switch (SYMBOL_TYPE (s))
         {
         case TOKEN_TEXT:
@@ -909,8 +971,10 @@ m4_defn (struct obstack *obs, int argc, token_data **argv)
           break;
 
         case TOKEN_FUNC:
+            /*取s对应的函数*/
           b = SYMBOL_FUNC (s);
           if (b == m4_placeholder)
+              /*如b为占位，则告警*/
             M4ERROR ((warning_status, 0, _("\
 builtin `%s' requested by frozen file is not supported"), arg));
           else if (argc != 2)
@@ -1302,8 +1366,10 @@ m4_changequote (struct obstack *obs MAYBE_UNUSED, int argc,
                 token_data **argv)
 {
   if (bad_argc (argv[0], argc, 1, 3))
+      /*到少一个参数，至多三个参数*/
     return;
 
+  /*按参数数量，设置lquote,rquote*/
   /* Explicit NULL distinguishes between empty and missing argument.  */
   set_quotes ((argc >= 2) ? TOKEN_DATA_TEXT (argv[1]) : NULL,
              (argc >= 3) ? TOKEN_DATA_TEXT (argv[2]) : NULL);
@@ -1513,7 +1579,9 @@ static void
 m4___file__ (struct obstack *obs, int argc, token_data **argv)
 {
   if (bad_argc (argv[0], argc, 1, 1))
+      /*参数有误，直接返回不处理*/
     return;
+  /*为obs增加lquote,$current_file,rquote*/
   obstack_grow (obs, lquote.string, lquote.length);
   obstack_grow (obs, current_file, strlen (current_file));
   obstack_grow (obs, rquote.string, rquote.length);
@@ -1523,7 +1591,9 @@ static void
 m4___line__ (struct obstack *obs, int argc, token_data **argv)
 {
   if (bad_argc (argv[0], argc, 1, 1))
+      /*参数有误，直接返回不处理*/
     return;
+  /*显示当前行号*/
   shipout_int (obs, current_line);
 }
 
@@ -1532,6 +1602,7 @@ m4___program__ (struct obstack *obs, int argc, token_data **argv)
 {
   if (bad_argc (argv[0], argc, 1, 1))
     return;
+  /*为obs增加lquote,$program_name,rquote*/
   obstack_grow (obs, lquote.string, lquote.length);
   obstack_grow (obs, program_name, strlen (program_name));
   obstack_grow (obs, rquote.string, rquote.length);
@@ -2225,6 +2296,7 @@ void
 expand_user_macro (struct obstack *obs, symbol *sym,
                    int argc, token_data **argv)
 {
+    /*展开符号中 '$xxxx'符*/
   const char *text = SYMBOL_TEXT (sym);
   int i;
   while (1)
@@ -2232,9 +2304,11 @@ expand_user_macro (struct obstack *obs, symbol *sym,
       const char *dollar = strchr (text, '$');
       if (!dollar)
         {
+          /*没有$符号，将text输出到obs*/
           obstack_grow (obs, text, strlen (text));
           return;
         }
+      /*有'$'符号，将'$'符号之前的输入到obs中*/
       obstack_grow (obs, text, dollar - text);
       text = dollar;
       switch (*++text)
@@ -2243,30 +2317,37 @@ expand_user_macro (struct obstack *obs, symbol *sym,
         case '5': case '6': case '7': case '8': case '9':
           if (no_gnu_extensions)
             {
+              /*将数字字符转换为数字*/
               i = *text++ - '0';
             }
           else
             {
+              /*gnu扩展容许出现大于10的参数，故完成转换*/
               for (i = 0; c_isdigit (*text); text++)
                 i = i*10 + (*text - '0');
             }
+          /*参数索引未超过实际输入，输出argv[i]*/
           if (i < argc)
             obstack_grow (obs, TOKEN_DATA_TEXT (argv[i]),
                           strlen (TOKEN_DATA_TEXT (argv[i])));
+
+          /*如果超过实际输入，则输出为空*/
           break;
 
         case '#': /* number of arguments */
-          shipout_int (obs, argc - 1);
+          shipout_int (obs, argc - 1);/*输出参数数目*/
           text++;
           break;
 
         case '*': /* all arguments */
         case '@': /* ... same, but quoted */
+            /*按要求输出所有参数，$*,$@方式有所不同*/
           dump_args (obs, argc, argv, ",", *text == '@');
           text++;
           break;
 
         default:
+            /*遇到不认识的情况，输出$符号*/
           obstack_1grow (obs, '$');
           break;
         }

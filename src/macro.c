@@ -65,7 +65,7 @@ expand_input (void)
   obstack_init (&argv_stack);
 
   while ((t = next_token (&td, &line)) != TOKEN_EOF)
-    expand_token ((struct obstack *) NULL, t, &td, line);
+    expand_token ((struct obstack *) NULL, t/*token类型*/, &td, line);
 
   obstack_free (&argc_stack, NULL);
   obstack_free (&argv_stack, NULL);
@@ -80,7 +80,7 @@ expand_input (void)
 `----------------------------------------------------------------*/
 
 static void
-expand_token (struct obstack *obs, token_type t, token_data *td, int line)
+expand_token (struct obstack *obs, token_type t, token_data *td, int line/*行号*/)
 {
   symbol *sym;
 
@@ -95,11 +95,13 @@ expand_token (struct obstack *obs, token_type t, token_data *td, int line)
     case TOKEN_CLOSE:
     case TOKEN_SIMPLE:
     case TOKEN_STRING:
-      shipout_text (obs, TOKEN_DATA_TEXT (td), strlen (TOKEN_DATA_TEXT (td)),
+        /*原样输出*/
+      shipout_text (obs, TOKEN_DATA_TEXT (td)/*字符串内容*/, strlen (TOKEN_DATA_TEXT (td)),
                     line);
       break;
 
     case TOKEN_WORD:
+        /*遇到word,查询符号*/
       sym = lookup_symbol (TOKEN_DATA_TEXT (td), SYMBOL_LOOKUP);
       if (sym == NULL || SYMBOL_TYPE (sym) == TOKEN_VOID
           || (SYMBOL_TYPE (sym) == TOKEN_FUNC
@@ -110,15 +112,18 @@ expand_token (struct obstack *obs, token_type t, token_data *td, int line)
           shipout_text (obs, TOKEN_DATA_ORIG_TEXT (td),
                         strlen (TOKEN_DATA_ORIG_TEXT (td)), line);
 #else
+          /*无符号或者有符号但符号后没有'('标记，原样输出*/
           shipout_text (obs, TOKEN_DATA_TEXT (td),
                         strlen (TOKEN_DATA_TEXT (td)), line);
 #endif
         }
       else
+          /*找到符号，进行符号展开*/
         expand_macro (sym);
       break;
 
     default:
+        /*遇到非预期的type*/
       M4ERROR ((warning_status, 0,
                 "INTERNAL ERROR: bad token type in expand_token ()"));
       abort ();
@@ -149,14 +154,28 @@ expand_argument (struct obstack *obs, token_data *argp)
   TOKEN_DATA_TYPE (argp) = TOKEN_VOID;
 
   /* Skip leading white space.  */
+  /*收集参数时，m4 命令忽略宏名的开头未加引号的空格、制表符和换行符。
+   * 使用单引号将字符串括起来。括起来的字符串的值是将引号去掉后的字符串。
+   * ==第二个参数也将会忽略前导的空格==
+   * */
   do
     {
+      /*如果t为simple,且为空格，则跳过空格*/
       t = next_token (&td, NULL);
     }
   while (t == TOKEN_SIMPLE && c_isspace (*TOKEN_DATA_TEXT (&td)));
 
+  /*取得token,记录在td中*/
   paren_level = 0;
 
+  /*当 m4 命令识别一个宏时，它以搜索匹配的右括号的方式收集参数。
+   * == 本函数实现为以右括号或者','号进行退出，以便支持下一个参数前空字符的忽略==
+   * 如果提供的参数比宏定义中的少，那么 m4 命令认为定义末尾出现的参数为空。
+   * 在收集参数的过程中，宏求值处理正常进行。
+   * 所有在嵌套调用值中的逗号或右括号被逐字转换；
+   * 它们不需要一个转义字符或引号。
+   * 收集参数后，m4 命令将宏的值推回到输入流并再次扫描。
+   * */
   while (1)
     {
 
@@ -172,9 +191,12 @@ expand_argument (struct obstack *obs, token_data *argp)
 
               if (TOKEN_DATA_TYPE (argp) == TOKEN_VOID)
                 {
+                  /*使用obs的结果做为参数*/
                   TOKEN_DATA_TYPE (argp) = TOKEN_TEXT;
                   TOKEN_DATA_TEXT (argp) = text;
                 }
+              /*（循环的唯一正常退出位置）
+               * 如果为true，则需要解析另一个参数，否则参数解析完成*/
               return t == TOKEN_COMMA;
             }
           FALLTHROUGH;
@@ -183,13 +205,16 @@ expand_argument (struct obstack *obs, token_data *argp)
           text = TOKEN_DATA_TEXT (&td);
 
           if (*text == '(')
+              /*遇到'('嵌套，level增加*/
             paren_level++;
           else if (*text == ')')
+              /*遇到')',level减少*/
             paren_level--;
           expand_token (obs, t, &td, line);
           break;
 
         case TOKEN_EOF:
+            /*参数未展开完成，遇到EOF,报错*/
           /* current_file changed to "" if we see TOKEN_EOF, use the
              previous value we stored earlier.  */
           m4_failure_at_line (0, file, line,
@@ -197,6 +222,7 @@ expand_argument (struct obstack *obs, token_data *argp)
 
         case TOKEN_WORD:
         case TOKEN_STRING:
+            /*是符号，则按符号展开，如果不是符号，则原样输出*/
           expand_token (obs, t, &td, line);
           break;
 
@@ -211,9 +237,11 @@ expand_argument (struct obstack *obs, token_data *argp)
         default:
           M4ERROR ((warning_status, 0,
                     "INTERNAL ERROR: bad token type in expand_argument ()"));
+          /*出错退出*/
           abort ();
         }
 
+      /*取下一个token*/
       t = next_token (&td, NULL);
     }
 }
@@ -233,6 +261,7 @@ collect_arguments (symbol *sym, struct obstack *argptr,
   bool more_args;
   bool groks_macro_args = SYMBOL_MACRO_ARGS (sym);
 
+  /*在arguments中添加符号名称*/
   TOKEN_DATA_TYPE (&td) = TOKEN_TEXT;
   TOKEN_DATA_TEXT (&td) = SYMBOL_NAME (sym);
   tdp = (token_data *) obstack_copy (arguments, &td, sizeof td);
@@ -240,9 +269,13 @@ collect_arguments (symbol *sym, struct obstack *argptr,
 
   if (peek_token () == TOKEN_OPEN)
     {
+      /*符号后直接遇到'('符号，消费掉'('token ，左括号必须紧接着macroname，
+       * 如果左括号没有紧跟着定义的宏名，那么 m4 命令将它当作不带参数的宏调来读取。
+       */
       next_token (&td, NULL); /* gobble parenthesis */
       do
         {
+          /*展开参数，返回值指出是否仍有参数要解析*/
           more_args = expand_argument (arguments, &td);
 
           if (!groks_macro_args && TOKEN_DATA_TYPE (&td) == TOKEN_FUNC)
@@ -275,14 +308,17 @@ call_macro (symbol *sym, int argc, token_data **argv,
   switch (SYMBOL_TYPE (sym))
     {
     case TOKEN_FUNC:
+        /*调用function*/
       (*SYMBOL_FUNC (sym)) (expansion, argc, argv);
       break;
 
     case TOKEN_TEXT:
+        /*展开用户定义的宏*/
       expand_user_macro (expansion, sym, argc, argv);
       break;
 
     case TOKEN_VOID:
+        /*非预期的输入情况*/
     default:
       M4ERROR ((warning_status, 0,
                 "INTERNAL ERROR: bad symbol type in call_macro ()"));
@@ -303,7 +339,7 @@ call_macro (symbol *sym, int argc, token_data **argv,
 `-------------------------------------------------------------------*/
 
 static void
-expand_macro (symbol *sym)
+expand_macro (symbol *sym/*待展开的符号*/)
 {
   struct obstack arguments;     /* Alternate obstack if argc_stack is busy.  */
   unsigned argv_base;           /* Size of argv_stack on entry.  */
@@ -329,6 +365,7 @@ expand_macro (symbol *sym)
   SYMBOL_PENDING_EXPANSIONS (sym)++;
   expansion_level++;
   if (nesting_limit > 0 && expansion_level > nesting_limit)
+      /*嵌套层数过多，报错*/
     m4_failure (0, _("recursion limit of %d exceeded, use -L<N> to change it"),
                 nesting_limit);
 
@@ -340,6 +377,7 @@ expand_macro (symbol *sym)
   argv_base = obstack_object_size (&argv_stack);
   if (obstack_object_size (&argc_stack) > 0)
     {
+      /*argc_stack长度不为0，说明是嵌套调用*/
       /* We cannot use argc_stack if this is a nested invocation, and an
          outer invocation has an unfinished argument being
          collected.  */
@@ -350,11 +388,14 @@ expand_macro (symbol *sym)
   if (traced && (debug_level & DEBUG_TRACE_CALL))
     trace_prepre (SYMBOL_NAME (sym), my_call_id);
 
+  /*收集参数*/
   collect_arguments (sym, &argv_stack,
                      use_argc_stack ? &argc_stack : &arguments);
 
+  /*参数数目*/
   argc = ((obstack_object_size (&argv_stack) - argv_base)
           / sizeof (token_data *));
+  /*参数值*/
   argv = (token_data **) ((uintptr_t) obstack_base (&argv_stack) + argv_base);
 
   loc_close_file = current_file;
@@ -365,8 +406,11 @@ expand_macro (symbol *sym)
   if (traced)
     trace_pre (SYMBOL_NAME (sym), my_call_id, argc, argv);
 
+  /*输出*/
   expansion = push_string_init ();
+  /*执行宏展开*/
   call_macro (sym, argc, argv, expansion);
+  /*将当前输出放在isp位置，再分析一遍*/
   expanded = push_string_finish ();
 
   if (traced)
